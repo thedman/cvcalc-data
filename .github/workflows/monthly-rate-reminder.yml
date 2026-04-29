@@ -1,0 +1,44 @@
+name: Monthly CIA Rate Reminder
+
+on:
+  schedule:
+    # 15th of every month at 12:00 UTC (8am ET)
+    - cron: "0 12 15 * *"
+  workflow_dispatch: # allow manual trigger for testing
+
+jobs:
+  remind:
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - name: Get current month
+        id: date
+        run: echo "month=$(date +'%B %Y')" >> $GITHUB_OUTPUT
+
+      - name: Open reminder issue
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const month = "${{ steps.date.outputs.month }}";
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `CIA rates update due — ${month}`,
+              body: [
+                "## Monthly CIA Section 3500 Rate Update",
+                "",
+                "New rates are typically published mid-month.",
+                "",
+                "### Steps",
+                "1. Visit [cia-ica.ca/publications/222176e](https://www.cia-ica.ca/publications/222176e/) and find the new month's i₁ and i₂ rates",
+                "2. Append one line to [`cia_rates.json`](../blob/main/cia_rates.json):",
+                "   ```json",
+                `   {"monthKey":"${new Date().toISOString().slice(0,7)}","i1":0.XXX,"i2":0.XXX}`,
+                "   ```",
+                "3. Commit and push — the CVCalculator app picks up the new rates within 1 hour",
+                "",
+                "Close this issue once updated.",
+              ].join("\n"),
+              labels: ["rates-update"],
+            });
