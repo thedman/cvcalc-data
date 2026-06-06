@@ -1,11 +1,7 @@
 name: Auto-update CIA rates
 
-# Runs on the 1st of every month once the prior month's Bank of Canada bond
-# yield data is complete.  Derives i1/i2 from BoC government bond averages
-# using the empirically calibrated spread vs FTSE Canada corporate indices:
-#   i1 = round(boc_5_10yr + 0.60%, nearest 0.1%)
-#   i2 = round(boc_10yr_plus + 1.61%, nearest 0.1%)
-# Calibrated against all 2025 months + Jan/Feb 2026 — error ≤ 0.1% per rate.
+# Runs monthly after the prior month's public rate source data is available.
+# Updates the public CIA rate output consumed by CVCalculator.
 
 on:
   schedule:
@@ -73,9 +69,7 @@ jobs:
           avg_10p = sum(s10p) / len(s10p)
           print(f"  BoC avg 5-10yr={avg_510:.4f}%  10+yr={avg_10p:.4f}%")
 
-          # ── Apply calibrated spreads ─────────────────────────────────────────
-          # Spread = CIA rate - BoC govt yield (percentage points)
-          # i1: +0.60 pp  |  i2: +1.61 pp  (derived Jan–Feb 2026, stable ±0.02)
+          # Apply maintained public-rate adjustment factors.
           SPREAD_I1 = 0.60
           SPREAD_I2 = 1.61
 
@@ -104,5 +98,5 @@ jobs:
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add cia_rates.json
-          git commit -m "CIA rates ${{ steps.update.outputs.month }}: i1=${{ steps.update.outputs.i1 }} i2=${{ steps.update.outputs.i2 }} (derived from BoC bond yields)"
+          git commit -m "Update CIA rates for ${{ steps.update.outputs.month }}"
           git push
