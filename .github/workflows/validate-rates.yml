@@ -1,0 +1,27 @@
+name: Validate CIA rates
+
+# Gate every change to the dataset. Runs on PRs and on direct pushes to main so
+# malformed data (bad ordering, duplicates, implausible values, broken JSON)
+# never reaches the apps' runtime source.
+
+on:
+  pull_request:
+    paths:
+      - "cia_rates.json"
+      - "scripts/validate_rates.py"
+  push:
+    branches: [main]
+    paths:
+      - "cia_rates.json"
+  workflow_dispatch:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Validate cia_rates.json
+        run: python3 scripts/validate_rates.py cia_rates.json
