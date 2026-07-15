@@ -66,5 +66,5 @@ jobs:
             "4. Record the source URL and the retrieval date in the PR description." \
             "" \
             "$ref")
-          gh issue create --title "$title" --body "$body" --label "cia-rate" || \
+          gh issue create --title "$title" --body "$body" --label "rates-update" || \
             gh issue create --title "$title" --body "$body"
