@@ -139,6 +139,30 @@ Until that exists, the manual operating rule is: after each verified rate update
 8. Send or schedule the subscriber email only after unsubscribe, consent, and idempotency checks pass.
 9. Record the completed month, source, operator, and downstream status.
 
+## Monthly Rate Sourcing SLA
+
+Expected publication window:
+
+- A reviewed monthly i1/i2 pair should normally be available during the first week of the valuation month.
+
+Escalation threshold:
+
+- If no reviewed pair is available by the 15th, treat the month as a sourcing exception.
+- Keep the discovery issue open and begin active source investigation.
+
+Fallback threshold:
+
+- After escalation, a primary-source calculation may be used only when:
+  - all authoritative inputs are documented;
+  - the CIA calculation is reproduced transparently;
+  - the result is independently reviewed;
+  - the change is submitted through the normal PR and validation process.
+
+Prohibited sources:
+
+- Never publish from a Bank of Canada estimate alone.
+- Never publish inferred, approximate, or unreviewed values.
+
 ## Overdue-Month Escalation
 
 Treat a missing month as an operations exception when:
