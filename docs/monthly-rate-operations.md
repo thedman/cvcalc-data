@@ -163,6 +163,11 @@ Prohibited sources:
 - Never publish from a Bank of Canada estimate alone.
 - Never publish inferred, approximate, or unreviewed values.
 
+Source disagreement rule:
+
+- When multiple reviewed sources disagree, treat the earliest retrievable reviewed publication, or the source that directly cites the monthly guidance, as authoritative until another reviewed source demonstrates a correction.
+- Document the rationale in the PR.
+
 ## Overdue-Month Escalation
 
 Treat a missing month as an operations exception when:
@@ -191,13 +196,13 @@ As of July 15, 2026, canonical `origin/main` serves rates through June 2026. Jul
 
 Discovery did not fail to alert. The July 5, 2026 scheduled run detected `latest_in_data=2026-06`, `expected=2026-07`, and opened the sourcing issue. The workflow did emit a harmless label warning because it referenced a missing `cia-rate` label; the workflow now uses the existing `rates-update` label.
 
-Current source status:
+Updated source status:
 
 - LSEG has published the June 24, 2026 FTSE Canada index YTM inputs used for the July 2026 calculation.
 - Penad lists July 2026 in its 2026 table, but the rate values are blank.
-- No reviewed secondary source has been recorded in this repository with the final July 2026 i1/i2 pair.
+- Convyta Partners' July 6, 2026 `CIA Commuted Value and Group Annuity Proxy Guidance` lists July 2026 as i1=3.7% and i2=5.0%.
 
-Do not add July 2026 to `cia_rates.json` until the final pair is either sourced from a reviewed actuarial publication or reproduced transparently from authoritative primary inputs and reviewed in a PR.
+Add July 2026 to `cia_rates.json` only through a reviewed PR that cites the Convyta July 6, 2026 guidance and closes issue `#5`.
 
 ## Recommended Engineering Backlog
 
