@@ -175,7 +175,10 @@ Treat a missing month as an operations exception when:
 Escalation steps:
 
 1. Keep the discovery issue open and add source-status notes there.
-2. Re-check reviewed secondary sources such as CIA/Convyta guidance and Penad.
+2. Re-check reviewed secondary sources in order:
+   - current CIA/Convyta monthly guidance;
+   - Penad's commuted-value interest-rate table;
+   - other reviewed actuarial or pension-administration publications.
 3. Confirm whether the FTSE input yields for the month are published.
 4. If secondary sources remain unavailable, calculate only from authoritative primary inputs and the CIA Section 3500 method.
 5. Record every source value, formula step, and rounding step in the PR.
