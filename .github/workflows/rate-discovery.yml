@@ -1,0 +1,70 @@
+name: CIA rate discovery
+
+# Detects when a CIA/FTSE commuted-value rate month newer than the dataset's
+# latest is expected but missing, and opens ONE issue asking a human to source
+# the authoritative value. It never fabricates or writes rates, and never pushes
+# to the dataset. A BoC-derived estimate is included only as a sanity-check
+# reference for the human.
+#
+# Notification policy (Task 7): an issue is created only when a new month is due
+# and not yet present. When nothing is due, the job is silent (no noise).
+
+on:
+  schedule:
+    - cron: "0 13 1-10 * *"   # 13:00 UTC, days 1-10 each month (publication window)
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  discover:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - id: check
+        name: Check for a due-but-missing month
+        run: python3 scripts/check_new_month.py cia_rates.json
+
+      - id: estimate
+        name: BoC reference estimate (non-authoritative)
+        if: steps.check.outputs.new_month_due == 'true'
+        continue-on-error: true
+        run: python3 scripts/boc_estimate.py "${{ steps.check.outputs.expected_month }}"
+
+      - name: Open sourcing issue
+        if: steps.check.outputs.new_month_due == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXPECTED: ${{ steps.check.outputs.expected_month }}
+          LATEST: ${{ steps.check.outputs.latest_in_data }}
+          I1_EST: ${{ steps.estimate.outputs.i1_estimate }}
+          I2_EST: ${{ steps.estimate.outputs.i2_estimate }}
+        run: |
+          title="CIA rate update needed: $EXPECTED"
+          existing=$(gh issue list --search "$title in:title" --state open --json number --jq 'length')
+          if [ "$existing" != "0" ]; then
+            echo "Issue for $EXPECTED already open — skipping."
+            exit 0
+          fi
+          ref="(BoC reference estimate unavailable)"
+          if [ -n "$I1_EST" ] && [ -n "$I2_EST" ]; then
+            ref="BoC-derived reference estimate (NOT authoritative — verify): i1≈$I1_EST, i2≈$I2_EST"
+          fi
+          body=$(printf '%s\n' \
+            "A CIA/FTSE commuted-value rate month newer than the latest in \`cia_rates.json\` ($LATEST) is expected to be published ($EXPECTED) but is missing." \
+            "" \
+            "Action required — do NOT fabricate values:" \
+            "1. Source the official i1 (first 10 years) and i2 (thereafter) for **$EXPECTED** from an authoritative source (CIA / FTSE Russell commuted-value rates)." \
+            "2. Add the record to \`cia_rates.json\` on a branch and open a PR." \
+            "3. The **Validate CIA rates** workflow checks structure, ordering, and plausibility automatically." \
+            "4. Record the source URL and the retrieval date in the PR description." \
+            "" \
+            "$ref")
+          gh issue create --title "$title" --body "$body" --label "cia-rate" || \
+            gh issue create --title "$title" --body "$body"
