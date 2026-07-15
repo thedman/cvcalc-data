@@ -36,10 +36,12 @@ The mobile apps should treat `cia_rates.json` as the canonical remote source. Bu
 
 `cvcalc-data/.github/workflows/rate-discovery.yml` runs during the monthly publication window and can also be run manually. It detects when an expected month is missing and opens a discovery issue for human sourcing. `cvcalc-data/.github/workflows/validate-rates.yml` validates PRs that change `cia_rates.json`.
 
+The current workflow may prepare a reviewable rate PR from Convyta evidence when a due month is missing.
+
 The current workflow does not:
 
-- Add rates automatically.
-- Source authoritative CIA / FTSE values by itself.
+- Direct-push rates to `main`.
+- Treat Bank of Canada estimates as production data.
 - Trigger a website article update.
 - Trigger subscriber email notifications.
 
@@ -60,6 +62,34 @@ Monthly schedule, first business day window
 ```
 
 Direct commits to `main` should be reserved for low-risk backfills or emergency corrections where the source has already been independently verified.
+
+## Convyta Reviewed-Source Automation
+
+Convyta is an accepted reviewed source for monthly CIA commuted-value rate guidance.
+
+Preferred evidence path:
+
+```text
+Convyta resources page
+  -> Convyta-hosted HTML guidance/table
+  -> COMMUTED VALUE INTEREST RATES row
+  -> Period, First 10 Yrs., Thereafter
+  -> review branch and PR
+```
+
+A Convyta-hosted HTML table or page showing the current month and both commuted-value rates is sufficient reviewed evidence when:
+
+- the page is hosted on `convyta.com`;
+- the content clearly identifies CIA commuted-value or CV rates and annuity guidance;
+- the current month and both commuted-value rates are present;
+- the values map unambiguously to `Period`, `First 10 Yrs.`, and `Thereafter`;
+- the row is not stale, duplicated, conflicting, or drawn from annuity-proxy columns.
+
+PDF retrieval is optional corroboration or fallback evidence. A downloadable PDF is not required when the HTML evidence is clear and complete. Do not rely on hard-coded hashed PDF URLs; only use PDF links discovered from reviewed Convyta pages.
+
+When Convyta extraction passes, automation may create a `rates/YYYY-MM` branch, append the new row to `cia_rates.json`, run validation, and open a PR. It must not direct-push `main` or auto-merge.
+
+When extraction fails, automation should leave the sourcing issue open. It should comment only when the status materially changes so the issue remains useful rather than noisy.
 
 ## Mobile App Cascade
 

@@ -1,28 +1,26 @@
 name: CIA rate discovery
 
 # Detects when a CIA/FTSE commuted-value rate month newer than the dataset's
-# latest is expected but missing, and opens ONE issue asking a human to source
-# the authoritative value. It never fabricates or writes rates, and never pushes
-# to the dataset. A BoC-derived estimate is included only as a sanity-check
-# reference for the human.
-#
-# Notification policy (Task 7): an issue is created only when a new month is due
-# and not yet present. When nothing is due, the job is silent (no noise).
+# latest is expected but missing. When Convyta exposes a clear reviewed HTML
+# row, this workflow opens a reviewable PR. Otherwise it opens or updates a
+# sourcing issue. It never direct-pushes financial reference data to main.
 
 on:
   schedule:
-    - cron: "0 13 1-10 * *"   # 13:00 UTC, days 1-10 each month (publication window)
+    - cron: "0 13 1-10 * *"   # 13:00 UTC, days 1-10 each month
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
   issues: write
+  pull-requests: write
 
 jobs:
   discover:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -31,13 +29,25 @@ jobs:
         name: Check for a due-but-missing month
         run: python3 scripts/check_new_month.py cia_rates.json
 
+      - id: convyta
+        name: Convyta reviewed-source discovery
+        if: steps.check.outputs.new_month_due == 'true'
+        continue-on-error: true
+        run: |
+          python3 scripts/fetch_convyta_rates.py \
+            --month "${{ steps.check.outputs.expected_month }}" \
+            --rates-file cia_rates.json \
+            --json-out "$RUNNER_TEMP/convyta-source.json" \
+            --check-pdf-links
+
       - id: estimate
         name: BoC reference estimate (non-authoritative)
         if: steps.check.outputs.new_month_due == 'true'
         continue-on-error: true
         run: python3 scripts/boc_estimate.py "${{ steps.check.outputs.expected_month }}"
 
-      - name: Open sourcing issue
+      - id: issue
+        name: Ensure sourcing issue exists
         if: steps.check.outputs.new_month_due == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
@@ -47,24 +57,118 @@ jobs:
           I2_EST: ${{ steps.estimate.outputs.i2_estimate }}
         run: |
           title="CIA rate update needed: $EXPECTED"
-          existing=$(gh issue list --search "$title in:title" --state open --json number --jq 'length')
-          if [ "$existing" != "0" ]; then
-            echo "Issue for $EXPECTED already open — skipping."
+          number=$(gh issue list --search "$title in:title" --state open --json number --jq '.[0].number // empty')
+          if [ -n "$number" ]; then
+            echo "Issue for $EXPECTED already open: #$number"
+            echo "issue_number=$number" >> "$GITHUB_OUTPUT"
             exit 0
           fi
+
           ref="(BoC reference estimate unavailable)"
           if [ -n "$I1_EST" ] && [ -n "$I2_EST" ]; then
-            ref="BoC-derived reference estimate (NOT authoritative — verify): i1≈$I1_EST, i2≈$I2_EST"
+            ref="BoC-derived reference estimate (NOT authoritative; verify): i1~$I1_EST, i2~$I2_EST"
           fi
+
           body=$(printf '%s\n' \
             "A CIA/FTSE commuted-value rate month newer than the latest in \`cia_rates.json\` ($LATEST) is expected to be published ($EXPECTED) but is missing." \
             "" \
-            "Action required — do NOT fabricate values:" \
-            "1. Source the official i1 (first 10 years) and i2 (thereafter) for **$EXPECTED** from an authoritative source (CIA / FTSE Russell commuted-value rates)." \
+            "Action required - do NOT fabricate values:" \
+            "1. Source the official i1 (first 10 years) and i2 (thereafter) for **$EXPECTED** from an authoritative source (CIA / FTSE Russell / Convyta reviewed guidance)." \
             "2. Add the record to \`cia_rates.json\` on a branch and open a PR." \
             "3. The **Validate CIA rates** workflow checks structure, ordering, and plausibility automatically." \
-            "4. Record the source URL and the retrieval date in the PR description." \
+            "4. Record the source URL and retrieval date in the PR description." \
             "" \
             "$ref")
-          gh issue create --title "$title" --body "$body" --label "rates-update" || \
-            gh issue create --title "$title" --body "$body"
+
+          url=$(gh issue create --title "$title" --body "$body" --label "rates-update" || \
+            gh issue create --title "$title" --body "$body")
+          number="${url##*/}"
+          echo "issue_number=$number" >> "$GITHUB_OUTPUT"
+
+      - name: Create reviewed rate PR from Convyta source
+        if: steps.check.outputs.new_month_due == 'true' && steps.convyta.outputs.found == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXPECTED: ${{ steps.check.outputs.expected_month }}
+          ISSUE_NUMBER: ${{ steps.issue.outputs.issue_number }}
+        run: |
+          branch="rates/$EXPECTED"
+          existing_pr=$(gh pr list --head "$branch" --state open --json url --jq '.[0].url // empty')
+          if [ -n "$existing_pr" ]; then
+            echo "PR already open for $EXPECTED: $existing_pr"
+            if [ -n "$ISSUE_NUMBER" ]; then
+              gh issue comment "$ISSUE_NUMBER" --body "Reviewed Convyta source was found for $EXPECTED. Existing PR: $existing_pr"
+            fi
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git checkout -b "$branch"
+
+          python3 scripts/fetch_convyta_rates.py \
+            --month "$EXPECTED" \
+            --rates-file cia_rates.json \
+            --json-out "$RUNNER_TEMP/convyta-source.json" \
+            --append-rate \
+            --check-pdf-links
+          python3 scripts/validate_rates.py cia_rates.json
+
+          python3 - <<'PY' > "$RUNNER_TEMP/pr-body.md"
+          import json
+          import os
+          from pathlib import Path
+
+          source = json.loads(Path(os.environ["RUNNER_TEMP"], "convyta-source.json").read_text())
+          month = source["month_key"]
+          issue = os.environ.get("ISSUE_NUMBER", "")
+          closes = f"Closes #{issue}" if issue else ""
+          print(f"""## Summary
+          - Add {month} CIA commuted-value rates from reviewed Convyta guidance.
+          - i1 = {source["i1"] * 100:.1f}%, i2 = {source["i2"] * 100:.1f}%.
+
+          ## Source evidence
+          - Source type: {source["source_type"]}
+          - Source URL: {source["source_url"]}
+          - Retrieved at: {source["retrieved_at_utc"]}
+          - Heading/context: {source["heading"]}
+          - Extracted row: `{source["extracted_text"]}`
+          - Content SHA-256: `{source["content_sha256"]}`
+          - PDF corroboration: {source["pdf_status"]}
+
+          ## Validation
+          - `python3 scripts/validate_rates.py cia_rates.json`
+          - Passed in workflow before PR creation.
+
+          {closes}
+          """)
+          PY
+
+          git add cia_rates.json
+          git commit -m "Add $EXPECTED CIA commuted-value rates"
+          git push --set-upstream origin "$branch"
+          pr_url=$(gh pr create \
+            --base main \
+            --head "$branch" \
+            --title "Add $EXPECTED CIA commuted-value rates" \
+            --body-file "$RUNNER_TEMP/pr-body.md")
+          echo "Created PR: $pr_url"
+          if [ -n "$ISSUE_NUMBER" ]; then
+            gh issue comment "$ISSUE_NUMBER" --body "Reviewed Convyta source was found for $EXPECTED and a review PR was opened: $pr_url"
+          fi
+
+      - name: Comment sourcing issue when Convyta source unavailable
+        if: steps.check.outputs.new_month_due == 'true' && steps.convyta.outputs.found != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXPECTED: ${{ steps.check.outputs.expected_month }}
+          ISSUE_NUMBER: ${{ steps.issue.outputs.issue_number }}
+          CONVYTA_ERROR: ${{ steps.convyta.outputs.error }}
+        run: |
+          if [ -n "$ISSUE_NUMBER" ]; then
+            body="Convyta reviewed-source automation did not find a usable $EXPECTED row. Reason: ${CONVYTA_ERROR:-unavailable}. The issue remains open for manual sourcing."
+            already=$(gh issue view "$ISSUE_NUMBER" --json comments --jq --arg body "$body" 'any(.comments[].body; . == $body)')
+            if [ "$already" != "true" ]; then
+              gh issue comment "$ISSUE_NUMBER" --body "$body"
+            fi
+          fi
