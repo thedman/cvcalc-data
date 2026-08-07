@@ -227,16 +227,15 @@ Status as of August 7, 2026:
 - Issue `#7` closed automatically from the PR.
 - Canonical `main` now ends at `2026-08`.
 - iOS runtime confirmed August appears after relaunch.
-- Android runtime confirmation is pending.
-- No app release was required for iOS to receive the canonical JSON update.
+- Android runtime confirmed August appears after relaunch.
+- No app release was required for either production app to receive the canonical JSON update.
 
 Operational note: the August workflow proved source discovery, fallback selection, branch creation, data append, and validation. Bot-created PR creation was initially blocked by repository Actions permissions; the permission was enabled afterward. A future source-available month should confirm whether bot-created PRs also trigger validation automatically.
 
 ## Open Follow-Ups
 
-1. Confirm Android displays August after refresh or relaunch.
-2. Assess a 24-month active dataset plus full historical archive model.
-3. Observe September's bot-created PR and validation behavior after the Actions permission change.
+1. Assess a 24-month active dataset plus full historical archive model.
+2. Observe September's bot-created PR and validation behavior after the Actions permission change.
 
 ## Monthly Rate Sourcing SLA
 
