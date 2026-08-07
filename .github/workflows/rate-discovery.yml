@@ -167,7 +167,7 @@ jobs:
         run: |
           if [ -n "$ISSUE_NUMBER" ]; then
             body="Convyta reviewed-source automation did not find a usable $EXPECTED row. Reason: ${CONVYTA_ERROR:-unavailable}. The issue remains open for manual sourcing."
-            already=$(gh issue view "$ISSUE_NUMBER" --json comments --jq --arg body "$body" 'any(.comments[].body; . == $body)')
+            already=$(gh issue view "$ISSUE_NUMBER" --json comments --jq '.comments[].body' | grep -F -x -q "$body" && echo true || echo false)
             if [ "$already" != "true" ]; then
               gh issue comment "$ISSUE_NUMBER" --body "$body"
             fi
