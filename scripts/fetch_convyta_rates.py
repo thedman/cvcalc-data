@@ -61,6 +61,7 @@ class ExtractedRate:
     month_key: str
     i1: float
     i2: float
+    source_name: str
     source_url: str
     source_type: str
     heading: str
@@ -247,6 +248,7 @@ def extract_from_tables(html_text: str, source_url: str, target_month: str) -> E
         month_key=target_month,
         i1=percent_to_decimal(row[i1_idx]),
         i2=percent_to_decimal(row[i2_idx]),
+        source_name="Convyta",
         source_url=source_url,
         source_type="html",
         heading=heading,
@@ -276,6 +278,7 @@ def extract_from_plain_text(text: str, source_url: str, target_month: str, sourc
         month_key=target_month,
         i1=percent_to_decimal(row_match.group(1)),
         i2=percent_to_decimal(row_match.group(2)),
+        source_name="Convyta",
         source_url=source_url,
         source_type=source_type,
         heading=heading,
@@ -410,6 +413,7 @@ def emit_outputs(rate: ExtractedRate, found: bool, error: str | None = None) -> 
             f.write(f"month={rate.month_key}\n")
             f.write(f"i1={rate.i1}\n")
             f.write(f"i2={rate.i2}\n")
+            f.write(f"source_name={rate.source_name}\n")
             f.write(f"source_url={rate.source_url}\n")
             f.write(f"source_type={rate.source_type}\n")
 
