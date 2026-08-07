@@ -36,7 +36,7 @@ The mobile apps should treat `cia_rates.json` as the canonical remote source. Bu
 
 `cvcalc-data/.github/workflows/rate-discovery.yml` runs during the monthly publication window and can also be run manually. It detects when an expected month is missing and opens a discovery issue for human sourcing. `cvcalc-data/.github/workflows/validate-rates.yml` validates PRs that change `cia_rates.json`.
 
-The current workflow may prepare a reviewable rate PR from Convyta evidence when a due month is missing.
+The current workflow may prepare a reviewable rate PR from selected reviewed-source evidence when a due month is missing. Convyta is preferred; Penad is an approved reviewed fallback when Convyta has not published a clear current-month row.
 
 The current workflow does not:
 
@@ -90,6 +90,49 @@ PDF retrieval is optional corroboration or fallback evidence. A downloadable PDF
 When Convyta extraction passes, automation may create a `rates/YYYY-MM` branch, append the new row to `cia_rates.json`, run validation, and open a PR. It must not direct-push `main` or auto-merge.
 
 When extraction fails, automation should leave the sourcing issue open. It should comment only when the status materially changes so the issue remains useful rather than noisy.
+
+## Reviewed-Source Selection
+
+Source priority:
+
+1. Convyta reviewed HTML.
+2. Penad reviewed HTML.
+3. Manual reviewed-source escalation.
+
+Decision rules:
+
+- If Convyta is available, use Convyta.
+- If Convyta is unavailable and Penad has a populated reviewed row, use Penad.
+- If both sources are available and agree, use Convyta and record Penad corroboration.
+- If both sources are available and disagree, stop and require human review.
+- If neither source is available, keep the sourcing issue open.
+
+Penad extraction must use the commuted-value interest-rate page and normalize `Rate` and `Post Period Rate` into `i1` and `i2`. Blank rows, malformed tables, wrong-year sections, duplicate/conflicting rows, and inferred values are not acceptable production evidence.
+
+## Publication Timing
+
+Expected-month detection follows the reviewed-source publication calendar instead of a fixed calendar day.
+
+The workflow determines the last Wednesday of the current month. Beginning on the following business day, it starts checking for the next calendar month's rates. Weekend handling is modeled directly. Statutory holidays are handled conservatively by treating a missing source as a normal no-result condition and continuing scheduled checks.
+
+The workflow checks every six hours around the expected publication window and daily through the 15th. It should continue to no-op safely when the canonical dataset is already current.
+
+## GitHub Actions Permissions
+
+Automated PR creation requires repository-level Actions permissions:
+
+```text
+Settings -> Actions -> General -> Workflow permissions
+```
+
+Required settings:
+
+- `Read and write permissions`.
+- `Allow GitHub Actions to create and approve pull requests`.
+
+Despite the checkbox wording, the workflow must not approve or merge its own PRs. Human review and manual merge remain the production gate.
+
+GitHub may suppress downstream workflow runs that are triggered by branches or PRs created with the repository `GITHUB_TOKEN`. If bot-created PR validation does not run automatically in a future month, use a narrowly scoped GitHub App token or fine-grained PAT stored as an Actions secret for the branch push and PR creation step. Do not put tokens directly in workflow YAML or logs.
 
 ## Mobile App Cascade
 
@@ -168,6 +211,32 @@ Until that exists, the manual operating rule is: after each verified rate update
 7. Update the website article from the canonical JSON.
 8. Send or schedule the subscriber email only after unsubscribe, consent, and idempotency checks pass.
 9. Record the completed month, source, operator, and downstream status.
+
+## August 2026 Acceptance Record
+
+Status as of August 7, 2026:
+
+- Canonical source before update: `cia_rates.json` ended at `2026-07`.
+- Expected month: `2026-08`.
+- Convyta result: checked first; no clear August row was available to automation.
+- Penad result: reviewed HTML row `AUG | 3.90 | 5.30`.
+- Normalized data row: `{"monthKey":"2026-08","i1":0.039,"i2":0.053}`.
+- Automation created branch `rates/2026-08`.
+- Automation updated only `cia_rates.json` and validation passed.
+- PR `#8` was opened for review and merged manually.
+- Issue `#7` closed automatically from the PR.
+- Canonical `main` now ends at `2026-08`.
+- iOS runtime confirmed August appears after relaunch.
+- Android runtime confirmation is pending.
+- No app release was required for iOS to receive the canonical JSON update.
+
+Operational note: the August workflow proved source discovery, fallback selection, branch creation, data append, and validation. Bot-created PR creation was initially blocked by repository Actions permissions; the permission was enabled afterward. A future source-available month should confirm whether bot-created PRs also trigger validation automatically.
+
+## Open Follow-Ups
+
+1. Confirm Android displays August after refresh or relaunch.
+2. Assess a 24-month active dataset plus full historical archive model.
+3. Observe September's bot-created PR and validation behavior after the Actions permission change.
 
 ## Monthly Rate Sourcing SLA
 
