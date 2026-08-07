@@ -7,7 +7,8 @@ name: CIA rate discovery
 
 on:
   schedule:
-    - cron: "0 13 1-10 * *"   # 13:00 UTC, days 1-10 each month
+    - cron: "0 */6 22-31 * *"  # every 6h around the last-Wednesday publication window
+    - cron: "0 13 1-15 * *"    # daily follow-up until the expected month lands
   workflow_dispatch:
 
 permissions:
