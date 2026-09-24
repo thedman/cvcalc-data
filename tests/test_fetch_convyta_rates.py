@@ -143,6 +143,14 @@ class FetchConvytaRatesTests(unittest.TestCase):
         self.assertEqual(rate.i1, 0.037)
         self.assertEqual(rate.i2, 0.05)
 
+    def test_pdf_fallback_handles_discovered_links_with_spaces(self) -> None:
+        self.assertEqual(
+            fetch_convyta_rates.quote_url_for_request(
+                "https://convyta.com/files/current.pdf/Convyta Partners - CV Rates and Annuity Guidance.pdf"
+            ),
+            "https://convyta.com/files/current.pdf/Convyta%20Partners%20-%20CV%20Rates%20and%20Annuity%20Guidance.pdf",
+        )
+
     def test_pdf_text_extracts_september_and_normalizes_percentages(self) -> None:
         pdf_text = (
             "CIA Commuted Value and Group Annuity Proxy Guidance "

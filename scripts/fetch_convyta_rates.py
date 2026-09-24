@@ -142,9 +142,22 @@ def normalize_space(value: str) -> str:
     return " ".join(html.unescape(value).replace("\xa0", " ").split())
 
 
+def quote_url_for_request(url: str) -> str:
+    parsed = urllib.parse.urlsplit(url)
+    return urllib.parse.urlunsplit(
+        (
+            parsed.scheme,
+            parsed.netloc,
+            urllib.parse.quote(parsed.path, safe="/%"),
+            urllib.parse.quote(parsed.query, safe="=&?/%"),
+            urllib.parse.quote(parsed.fragment, safe="=&?/%"),
+        )
+    )
+
+
 def fetch_url(url: str) -> str:
     request = urllib.request.Request(
-        url,
+        quote_url_for_request(url),
         headers={"User-Agent": "cvcalc-data-rate-discovery/1.0"},
     )
     with urllib.request.urlopen(request, timeout=30) as response:
@@ -310,7 +323,7 @@ def extract_pdf_text(url: str) -> str:
     except ImportError as exc:
         raise SourceError("pypdf unavailable for optional PDF fallback") from exc
     request = urllib.request.Request(
-        url,
+        quote_url_for_request(url),
         headers={"User-Agent": "cvcalc-data-rate-discovery/1.0"},
     )
     with urllib.request.urlopen(request, timeout=30) as response:
