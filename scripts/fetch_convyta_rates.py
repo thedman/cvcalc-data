@@ -278,12 +278,11 @@ def extract_from_plain_text(text: str, source_url: str, target_month: str, sourc
     idx = page_text.lower().find("commuted value interest rates")
     if idx == -1:
         raise SourceError("plain text does not identify commuted-value interest-rate section")
+    row_pattern = rf"\b{re.escape(target)}\b\s+(\d+(?:\.\d+)?%)\s+(\d+(?:\.\d+)?%)"
     scoped = page_text[idx:]
-    row_matches = re.findall(
-        rf"\b{re.escape(target)}\b\s+(\d+(?:\.\d+)?%)\s+(\d+(?:\.\d+)?%)",
-        scoped,
-        re.I,
-    )
+    row_matches = re.findall(row_pattern, scoped, re.I)
+    if not row_matches:
+        row_matches = re.findall(row_pattern, page_text, re.I)
     if not row_matches:
         raise SourceError(f"no {target} commuted-value row found in plain text")
     unique_matches = set(row_matches)

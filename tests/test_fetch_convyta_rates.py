@@ -170,6 +170,23 @@ class FetchConvytaRatesTests(unittest.TestCase):
         self.assertEqual(rate.i1, 0.04)
         self.assertEqual(rate.i2, 0.054)
 
+    def test_pdf_text_allows_extracted_heading_after_table(self) -> None:
+        pdf_text = (
+            "CIA Commuted Value and Group Annuity Proxy Guidance "
+            "Period First 10 Yrs. Thereafter "
+            "Sep-2026 4.0% 5.4% 2.1% 2.1% 2.161% 2.132% "
+            "COMMUTED VALUE INTEREST RATES "
+            "September 1, 2026"
+        )
+        rate = fetch_convyta_rates.extract_from_plain_text(
+            pdf_text,
+            "https://convyta.com/files/current-guidance.pdf",
+            "2026-09",
+            "pdf",
+        )
+        self.assertEqual(rate.i1, 0.04)
+        self.assertEqual(rate.i2, 0.054)
+
     def test_pdf_text_missing_target_month_fails_closed(self) -> None:
         pdf_text = (
             "CIA Commuted Value and Group Annuity Proxy Guidance "
