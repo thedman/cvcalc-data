@@ -26,6 +26,9 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Install source-discovery dependencies
+        run: python3 -m pip install -r requirements.txt
+
       - id: check
         name: Check for a due-but-missing month
         run: python3 scripts/check_new_month.py cia_rates.json
@@ -195,13 +198,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           EXPECTED: ${{ steps.check.outputs.expected_month }}
+          LATEST: ${{ steps.check.outputs.latest_in_data }}
           ISSUE_NUMBER: ${{ steps.issue.outputs.issue_number }}
           SOURCE_ERROR: ${{ steps.source.outputs.error }}
-        run: |
-          if [ -n "$ISSUE_NUMBER" ]; then
-            body="Reviewed-source automation did not find a usable $EXPECTED row. Reason: ${SOURCE_ERROR:-unavailable}. The issue remains open for manual sourcing."
-            already=$(gh issue view "$ISSUE_NUMBER" --json comments --jq '.comments[].body' | grep -F -x -q "$body" && echo true || echo false)
-            if [ "$already" != "true" ]; then
-              gh issue comment "$ISSUE_NUMBER" --body "$body"
-            fi
-          fi
+        run: python3 scripts/comment_sourcing_issue.py

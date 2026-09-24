@@ -143,6 +143,71 @@ class FetchConvytaRatesTests(unittest.TestCase):
         self.assertEqual(rate.i1, 0.037)
         self.assertEqual(rate.i2, 0.05)
 
+    def test_pdf_text_extracts_september_and_normalizes_percentages(self) -> None:
+        pdf_text = (
+            "CIA Commuted Value and Group Annuity Proxy Guidance "
+            "COMMUTED VALUE INTEREST RATES "
+            "Period First 10 Yrs. Thereafter "
+            "Sep-2026 4.0% 5.4% "
+            "GROUP ANNUITY PROXY INTEREST RATES Short Medium Long"
+        )
+        rate = fetch_convyta_rates.extract_from_plain_text(
+            pdf_text,
+            "https://convyta.com/files/current-guidance.pdf",
+            "2026-09",
+            "pdf",
+        )
+        self.assertEqual(rate.month_key, "2026-09")
+        self.assertEqual(rate.source_type, "pdf")
+        self.assertEqual(rate.i1, 0.04)
+        self.assertEqual(rate.i2, 0.054)
+
+    def test_pdf_text_missing_target_month_fails_closed(self) -> None:
+        pdf_text = (
+            "CIA Commuted Value and Group Annuity Proxy Guidance "
+            "COMMUTED VALUE INTEREST RATES "
+            "Period First 10 Yrs. Thereafter "
+            "Aug-2026 3.9% 5.3%"
+        )
+        with self.assertRaises(fetch_convyta_rates.SourceError):
+            fetch_convyta_rates.extract_from_plain_text(
+                pdf_text,
+                "https://convyta.com/files/current-guidance.pdf",
+                "2026-09",
+                "pdf",
+            )
+
+    def test_pdf_text_conflicting_target_rows_fail_closed(self) -> None:
+        pdf_text = (
+            "CIA Commuted Value and Group Annuity Proxy Guidance "
+            "COMMUTED VALUE INTEREST RATES "
+            "Period First 10 Yrs. Thereafter "
+            "Sep-2026 4.0% 5.4% "
+            "Sep-2026 4.1% 5.4%"
+        )
+        with self.assertRaisesRegex(fetch_convyta_rates.SourceError, "multiple conflicting"):
+            fetch_convyta_rates.extract_from_plain_text(
+                pdf_text,
+                "https://convyta.com/files/current-guidance.pdf",
+                "2026-09",
+                "pdf",
+            )
+
+    def test_pdf_text_malformed_values_fail_closed(self) -> None:
+        pdf_text = (
+            "CIA Commuted Value and Group Annuity Proxy Guidance "
+            "COMMUTED VALUE INTEREST RATES "
+            "Period First 10 Yrs. Thereafter "
+            "Sep-2026 pending 5.4%"
+        )
+        with self.assertRaises(fetch_convyta_rates.SourceError):
+            fetch_convyta_rates.extract_from_plain_text(
+                pdf_text,
+                "https://convyta.com/files/current-guidance.pdf",
+                "2026-09",
+                "pdf",
+            )
+
     def test_resources_page_can_discover_linked_html_guidance(self) -> None:
         resources_html = (FIXTURES / "convyta_resources_with_link.html").read_text()
         guidance_html = (FIXTURES / "convyta_success.html").read_text()

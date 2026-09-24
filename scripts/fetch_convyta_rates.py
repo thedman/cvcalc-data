@@ -266,18 +266,22 @@ def extract_from_plain_text(text: str, source_url: str, target_month: str, sourc
     if idx == -1:
         raise SourceError("plain text does not identify commuted-value interest-rate section")
     scoped = page_text[idx:]
-    row_match = re.search(
+    row_matches = re.findall(
         rf"\b{re.escape(target)}\b\s+(\d+(?:\.\d+)?%)\s+(\d+(?:\.\d+)?%)",
         scoped,
         re.I,
     )
-    if not row_match:
+    if not row_matches:
         raise SourceError(f"no {target} commuted-value row found in plain text")
-    extracted_text = f"{target} | {row_match.group(1)} | {row_match.group(2)}"
+    unique_matches = set(row_matches)
+    if len(unique_matches) > 1:
+        raise SourceError(f"multiple conflicting {target} rows found in plain text")
+    i1_text, i2_text = row_matches[0]
+    extracted_text = f"{target} | {i1_text} | {i2_text}"
     return ExtractedRate(
         month_key=target_month,
-        i1=percent_to_decimal(row_match.group(1)),
-        i2=percent_to_decimal(row_match.group(2)),
+        i1=percent_to_decimal(i1_text),
+        i2=percent_to_decimal(i2_text),
         source_name="Convyta",
         source_url=source_url,
         source_type=source_type,

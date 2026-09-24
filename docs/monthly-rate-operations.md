@@ -232,6 +232,30 @@ Status as of August 7, 2026:
 
 Operational note: the August workflow proved source discovery, fallback selection, branch creation, data append, and validation. Bot-created PR creation was initially blocked by repository Actions permissions; the permission was enabled afterward. A future source-available month should confirm whether bot-created PRs also trigger validation automatically.
 
+## September 2026 Control Repair
+
+Operating-effectiveness finding:
+
+- Expected-month detection correctly switched to `2026-09`.
+- Scheduled discovery ran in the intended windows.
+- Canonical protection worked: `main` remained at `2026-08` while no reviewed source was extracted.
+- The reviewed Convyta PDF contained September commuted-value rates, but the workflow runtime had not installed the `pypdf` dependency required by the existing PDF fallback.
+- Duplicate suppression kept the sourcing issue from receiving meaningful overdue visibility after the documented 15th-of-month escalation threshold.
+
+Remediation:
+
+- The rate-discovery workflow installs the pinned source-discovery dependency set so the existing Convyta PDF fallback can execute.
+- Unresolved missing-month issues receive an `overdue-rate-source` label and dated status comment on or after the 15th when no actionable reviewed source has been found.
+- Fail-closed behavior remains unchanged: no estimates, no inferred values, no direct push to `main`, and no auto-merge.
+- Human review and merge remain mandatory before canonical data changes.
+
+Acceptance criteria:
+
+- The repaired adapter independently extracts September from reviewed Convyta source evidence.
+- The normal discovery workflow creates the September data PR from the selected reviewed source.
+- Bot-created PR validation behavior is observed and recorded.
+- Canonical `main` remains unchanged until human merge.
+
 ## Open Follow-Ups
 
 1. Assess a 24-month active dataset plus full historical archive model.
