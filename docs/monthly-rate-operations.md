@@ -32,36 +32,36 @@ CIA / FTSE / reviewed source
 
 The mobile apps should treat `cia_rates.json` as the canonical remote source. Bundled app tables are fallback data only. Updating `cia_rates.json` is therefore production-impacting, even though it is "just JSON."
 
-## Current Implementation
+## Automated Production Transaction
 
-`cvcalc-data/.github/workflows/rate-discovery.yml` runs during the monthly publication window and can also be run manually. It detects when an expected month is missing and opens a discovery issue for human sourcing. `cvcalc-data/.github/workflows/validate-rates.yml` validates PRs that change `cia_rates.json`.
-
-The current workflow may prepare a reviewable rate PR from selected reviewed-source evidence when a due month is missing. Convyta is preferred; Penad is an approved reviewed fallback when Convyta has not published a clear current-month row.
-
-The current workflow does not:
-
-- Direct-push rates to `main`.
-- Treat Bank of Canada estimates as production data.
-- Trigger a website article update.
-- Trigger subscriber email notifications.
-
-## Target Workflow
-
-The preferred workflow is a reviewed publish model:
+The normal monthly path runs entirely in `rate-discovery.yml`, using the repository `GITHUB_TOKEN` with `contents: write` and `issues: write`. No routine PR, approval, CI authorization, PAT, GitHub App, or manual merge is required. Human action is exception-only.
 
 ```text
-Monthly schedule, first business day window
-  -> detect missing month in cia_rates.json
-  -> collect candidate i1/i2 values from allowed sources
-  -> open PR against cvcalc-data
-  -> validate JSON shape, ordering, decimal precision, and month uniqueness
-  -> human verifies source and approves
-  -> merge to main
-  -> mobile apps receive rates on next runtime fetch
-  -> downstream jobs update site content and send subscriber notification
+scheduled discovery -> fetch canonical main -> determine next missing month
+  -> deterministic Convyta/Penad extraction -> reviewed-source selection
+  -> append candidate -> validate candidate -> fast-forward push to main
+  -> fetch main again -> validate and compare exact canonical state
+  -> record provenance and close monthly issue -> re-evaluate next month
 ```
 
-Direct commits to `main` should be reserved for low-risk backfills or emergency corrections where the source has already been independently verified.
+Publication requires every gate to pass:
+
+1. The publication calendar deterministically sets the latest expected month.
+2. The target is exactly the month after the latest canonical month, never a later calendar month that skips a dependency.
+3. Existing approved-host, guidance-context, column-mapping, duplicate/conflict and numeric/plausibility extraction controls pass.
+4. Convyta is preferred; Penad is the approved fallback/corroboration. Both usable sources must agree exactly. Disagreement stops publication.
+5. The extracted month equals the target. i1/i2 are numeric and the candidate passes `python3 scripts/validate_rates.py cia_rates.json` before committing.
+6. The push is an ordinary fast-forward push; concurrent main changes fail closed. Workflow concurrency serializes production discovery runs.
+7. After pushing, fetch origin/main again, run the validator against its data, and require the entire canonical dataset to equal the prior dataset plus precisely the reviewed row. This verifies exact i1/i2, unchanged history and advancement by exactly one month.
+8. Only verified publication closes a monthly exception issue. Source URL, retrieval time, extracted context, content hash and corroboration are recorded in commit provenance, workflow summary and issue closure.
+
+The workflow never relies on a second workflow triggered by a `GITHUB_TOKEN` commit. The separate validation workflow remains useful for manual PRs/pushes; production publication validation occurs inside the discovery transaction.
+
+Failures identify HUMAN ACTION REQUIRED, expected blocking month and failure stage in the monthly issue. Exact repeated failures are deduplicated. A source wait produces an explicit failed/stale result, rather than a healthy green run. A completed earlier recovery remains published even when a later month has no reviewed evidence.
+
+Example: with canonical August and calendar October, publish and verify September first; then independently discover October. No reviewed September means stop at September. Reviewed September but unavailable October means September recovery succeeds and the October issue remains open. Never insert October before September. Bank of Canada estimates never enter production.
+
+Installation/setup failures also raise an exception when the checkout and Python runtime remain usable. Infrastructure failures that prevent issue tooling from running remain visible as failed workflow runs and require operator recovery.
 
 ## Convyta Reviewed-Source Automation
 
@@ -74,7 +74,7 @@ Convyta resources page
   -> Convyta-hosted HTML guidance/table
   -> COMMUTED VALUE INTEREST RATES row
   -> Period, First 10 Yrs., Thereafter
-  -> review branch and PR
+  -> validated candidate and verified main publication
 ```
 
 A Convyta-hosted HTML table or page showing the current month and both commuted-value rates is sufficient reviewed evidence when:
@@ -87,7 +87,7 @@ A Convyta-hosted HTML table or page showing the current month and both commuted-
 
 PDF retrieval is optional corroboration or fallback evidence. A downloadable PDF is not required when the HTML evidence is clear and complete. Do not rely on hard-coded hashed PDF URLs; only use PDF links discovered from reviewed Convyta pages.
 
-When Convyta extraction passes, automation may create a `rates/YYYY-MM` branch, append the new row to `cia_rates.json`, run validation, and open a PR. It must not direct-push `main` or auto-merge.
+When Convyta extraction and source selection pass, automation appends exactly the next canonical month, validates the candidate, commits directly to main, and verifies fetched canonical main in the same workflow.
 
 When extraction fails, automation should leave the sourcing issue open. It should comment only when the status materially changes so the issue remains useful rather than noisy.
 
@@ -115,24 +115,11 @@ Expected-month detection follows the reviewed-source publication calendar instea
 
 The workflow determines the last Wednesday of the current month. Beginning on the following business day, it starts checking for the next calendar month's rates. Weekend handling is modeled directly. Statutory holidays are handled conservatively by treating a missing source as a normal no-result condition and continuing scheduled checks.
 
-The workflow checks every six hours around the expected publication window and daily through the 15th. It should continue to no-op safely when the canonical dataset is already current.
+The workflow checks every six hours around the expected publication window and daily throughout the month. It should continue to no-op safely when the canonical dataset is already current.
 
 ## GitHub Actions Permissions
 
-Automated PR creation requires repository-level Actions permissions:
-
-```text
-Settings -> Actions -> General -> Workflow permissions
-```
-
-Required settings:
-
-- `Read and write permissions`.
-- `Allow GitHub Actions to create and approve pull requests`.
-
-Despite the checkbox wording, the workflow must not approve or merge its own PRs. Human review and manual merge remain the production gate.
-
-GitHub may suppress downstream workflow runs that are triggered by branches or PRs created with the repository `GITHUB_TOKEN`. If bot-created PR validation does not run automatically in a future month, use a narrowly scoped GitHub App token or fine-grained PAT stored as an Actions secret for the branch push and PR creation step. Do not put tokens directly in workflow YAML or logs.
+The production workflow requests only `contents: write` for publication and `issues: write` for exception lifecycle management. Repository rules must permit the repository Actions token to push main. A rejected push is a production exception; do not bypass it with another credential or weaken contributor policy. No PR permission or approval setting is required by the new happy path.
 
 ## Mobile App Cascade
 
@@ -206,7 +193,7 @@ Until that exists, the manual operating rule is: after each verified rate update
 2. If the expected month is missing, source the authoritative CIA / FTSE values.
 3. Add the month only after source review.
 4. Validate JSON ordering, uniqueness, and decimal rate format.
-5. Merge or commit the reviewed data update.
+5. Observe automatic validated publication and post-push verification; intervene only for an explicit exception.
 6. Confirm iOS and Android can fetch the latest month.
 7. Update the website article from the canonical JSON.
 8. Send or schedule the subscriber email only after unsubscribe, consent, and idempotency checks pass.
@@ -232,34 +219,15 @@ Status as of August 7, 2026:
 
 Operational note: the August workflow proved source discovery, fallback selection, branch creation, data append, and validation. Bot-created PR creation was initially blocked by repository Actions permissions; the permission was enabled afterward. A future source-available month should confirm whether bot-created PRs also trigger validation automatically.
 
-## September 2026 Control Repair
+## September 2026 Control Failure and Remediation
 
-Operating-effectiveness finding:
+Reviewed September evidence was discovered and PR #10 was created correctly. Bot-created PR validation entered GitHub `action_required` state. Required human authorization was not completed; canonical production remained at August and apps therefore remained stale. Repeated scheduled discovery runs did not remediate production. October processing exposed the unresolved prior-month dependency.
 
-- Expected-month detection correctly switched to `2026-09`.
-- Scheduled discovery ran in the intended windows.
-- Canonical protection worked: `main` remained at `2026-08` while no reviewed source was extracted.
-- The reviewed Convyta PDF contained September commuted-value rates, but the workflow runtime had not installed the `pypdf` dependency required by the existing PDF fallback.
-- Duplicate suppression kept the sourcing issue from receiving meaningful overdue visibility after the documented 15th-of-month escalation threshold.
+Earlier adapter repairs installed PDF dependencies and corrected PDF link/text handling. Those repairs improved discovery, but did not remove the ineffective production authorization gate.
 
-Remediation:
+**Control conclusion:** the routine human authorization/merge gate did not operate reliably and is removed from the normal monthly happy path. Human review is now exception-based rather than mandatory for every monthly publication. The automated production gates above replace it without weakening source quality or fail-closed publication controls.
 
-- The rate-discovery workflow installs the pinned source-discovery dependency set so the existing Convyta PDF fallback can execute.
-- Unresolved missing-month issues receive an `overdue-rate-source` label and dated status comment on or after the 15th when no actionable reviewed source has been found.
-- Fail-closed behavior remains unchanged: no estimates, no inferred values, no direct push to `main`, and no auto-merge.
-- Human review and merge remain mandatory before canonical data changes.
-
-Acceptance criteria:
-
-- The repaired adapter independently extracts September from reviewed Convyta source evidence.
-- The normal discovery workflow creates the September data PR from the selected reviewed source.
-- Bot-created PR validation behavior is observed and recorded.
-- Canonical `main` remains unchanged until human merge.
-
-## Open Follow-Ups
-
-1. Assess a 24-month active dataset plus full historical archive model.
-2. Observe September's bot-created PR and validation behavior after the Actions permission change.
+September recovery was merged on October 6, 2026, through PR #10 at `7e2e44d3e00580ea796116ac6c77971263a0fca9`. Canonical September is i1=0.040, i2=0.054. This recovery preceded installation of the unattended transaction and is not evidence that the new pipeline worked. October must be reassessed from canonical September by the new workflow.
 
 ## Monthly Rate Sourcing SLA
 
@@ -287,8 +255,7 @@ Prohibited sources:
 
 Source disagreement rule:
 
-- When multiple reviewed sources disagree, treat the earliest retrievable reviewed publication, or the source that directly cites the monthly guidance, as authoritative until another reviewed source demonstrates a correction.
-- Document the rationale in the PR.
+- When reviewed sources disagree, STOP. No source takes automatic precedence. Raise a HUMAN ACTION REQUIRED exception and document the resolution before resuming publication.
 
 ## Overdue-Month Escalation
 
@@ -328,7 +295,7 @@ Add July 2026 to `cia_rates.json` only through a reviewed PR that cites the Conv
 
 ## Recommended Engineering Backlog
 
-1. Keep the PR-based reviewed rate workflow as the canonical update path.
+1. Maintain the single-workflow validated publication transaction as the canonical monthly update path.
 2. Reconcile machine-derived historical months against authoritative sources where needed.
 3. Add a downstream site-update workflow that opens a PR in `CVCalculator_site`.
 4. Design a protected broadcast endpoint or worker job for monthly rate emails.
