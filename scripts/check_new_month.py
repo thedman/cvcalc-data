@@ -48,18 +48,20 @@ def next_business_day(day: date) -> date:
 
 
 def expected_latest(today: date) -> str:
-    """Return the latest valuation month expected to be discoverable by date.
+    """Current month becomes due on its 5th; never anticipate next month.
 
-    Convyta says rates for month M are normally available by the end of the
-    first business day after the last Wednesday of month M-1. Statutory
-    holidays are intentionally not modeled here: checking early is safe because
-    a missing source is a normal no-result condition.
+    Before the 5th, the prior month remains due so unresolved backlog cannot
+    silently become healthy at a month boundary. Dates use the runner's UTC day.
     """
-    publication_check_starts = next_business_day(last_wednesday(today.year, today.month))
-    if today >= publication_check_starts:
-        year, month = next_month(today.year, today.month)
-        return month_key(year, month)
-    return month_key(today.year, today.month)
+    year, month = today.year, today.month
+    if today.day < 5:
+        year, month = previous_month(year, month)
+    return month_key(year, month)
+
+
+def sourcing_overdue(month: str, today: date) -> bool:
+    """Escalate against the missing month's own 15th, including prior backlog."""
+    return today >= date.fromisoformat(f"{month}-15")
 
 
 def discovery_status(data: list[dict[str, object]], today: date) -> tuple[str, str, bool]:

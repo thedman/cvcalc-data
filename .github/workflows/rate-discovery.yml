@@ -2,8 +2,8 @@ name: CIA rate discovery
 
 on:
   schedule:
-    - cron: "0 */6 22-31 * *"
-    - cron: "0 13 * * *"
+    # Start on the 5th of the valuation month; retry daily at 13:00 UTC.
+    - cron: "0 13 5-31 * *"
   workflow_dispatch:
 
 permissions:

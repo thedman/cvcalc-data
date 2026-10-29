@@ -57,7 +57,7 @@ Publication requires every gate to pass:
 
 The workflow never relies on a second workflow triggered by a `GITHUB_TOKEN` commit. The separate validation workflow remains useful for manual PRs/pushes; production publication validation occurs inside the discovery transaction.
 
-Failures identify HUMAN ACTION REQUIRED, expected blocking month and failure stage in the monthly issue. Exact repeated failures are deduplicated. A source wait produces an explicit failed/stale result, rather than a healthy green run. A completed earlier recovery remains published even when a later month has no reviewed evidence.
+Failures identify HUMAN ACTION REQUIRED, expected blocking month and failure stage in the monthly issue. Exact repeated failures are deduplicated. Missing evidence for the current valuation month is an explicit SOURCING WAIT through the 14th, with no production change or human alert. From the 15th it is a failed sourcing exception. Missing prior months and all control failures remain immediate exceptions; a green wait must never hide overdue backlog. A completed earlier recovery remains published even when a later month has no reviewed evidence.
 
 Example: with canonical August and calendar October, publish and verify September first; then independently discover October. No reviewed September means stop at September. Reviewed September but unavailable October means September recovery succeeds and the October issue remains open. Never insert October before September. Bank of Canada estimates never enter production.
 
@@ -111,11 +111,25 @@ Penad extraction must use the commuted-value interest-rate page and normalize `R
 
 ## Publication Timing
 
-Expected-month detection follows the reviewed-source publication calendar instead of a fixed calendar day.
+Effective October 29, 2026, discovery starts on the **5th of the valuation month**, at **13:00 UTC**, and retries daily through month end. After verified publication, subsequent runs safely report canonical current. There are no scheduled checks on days 1-4 and no advance checks for next month's rates. GitHub schedules can start later than their nominal time.
 
-The workflow determines the last Wednesday of the current month. Beginning on the following business day, it starts checking for the next calendar month's rates. Weekend handling is modeled directly. Statutory holidays are handled conservatively by treating a missing source as a normal no-result condition and continuing scheduled checks.
+Expected-month calculation uses the runner's UTC date: before the 5th, the target remains the prior month; from the 5th, it is the current month. Manual dispatch uses the same rule and cannot publish next month's rates early. Keeping the prior month due preserves overdue-backlog detection at month boundaries.
 
-The workflow checks every six hours around the expected publication window and daily throughout the month. It should continue to no-op safely when the canonical dataset is already current.
+Status methodology:
+
+| Condition | Result |
+| --- | --- |
+| Canonical covers the target and prior issues reconcile | Current; no source fetch or publication |
+| Neither approved source supplies the current month's row, 5th-14th | SOURCING WAIT; unchanged data; daily retry; no new human exception |
+| Missing evidence on/after that missing month's 15th | Failed run; deduplicated HUMAN ACTION REQUIRED issue |
+| A prior month is missing | Sequential recovery; unavailable evidence is already overdue, including on days 1-4 during manual dispatch |
+| Sources disagree, extraction is malformed, validation fails, push or verification fails | Immediate failed control exception regardless of date |
+
+Only an explicit no-reviewed-source result qualifies for normal wait. This grace period does not relax approved-source selection, candidate validation, exact-month matching, no-skipping, or post-push verification.
+
+For November 2026: October 29 does not target November; November 1-4 still target October; November 5 starts November discovery; November 15 escalates missing November evidence. The former last-Wednesday/next-business-day rule and six-hour checks are retired. This change avoids premature failure emails while allowing publishers several days after month start.
+
+Existing prematurely opened sourcing issues may remain open as tracking records during the wait period; they close only after verified publication. Changing the schedule does not imply that missing rates were published or validated.
 
 ## GitHub Actions Permissions
 
@@ -233,7 +247,7 @@ September recovery was merged on October 6, 2026, through PR #10 at `7e2e44d3e00
 
 Expected publication window:
 
-- A reviewed monthly i1/i2 pair should normally be available during the first week of the valuation month.
+- Begin checking on the 5th of the valuation month; allow normal sourcing wait through the 14th.
 
 Escalation threshold:
 
@@ -261,10 +275,10 @@ Source disagreement rule:
 
 Treat a missing month as an operations exception when:
 
-- the discovery issue has been open for more than five business days;
-- the usual reviewed secondary sources have not published the final i1/i2 pair;
-- the underlying FTSE input yields are already published; or
-- the date is past the normal publication window and `cia_rates.json` still ends at the prior month.
+- reviewed evidence is still unavailable on or after the missing valuation month's 15th; or
+- a source-quality, extraction, validation, publication, verification, or reconciliation control fails, regardless of date.
+
+Issue age or the availability of FTSE inputs alone does not shorten the 5th-14th sourcing wait.
 
 Escalation steps:
 

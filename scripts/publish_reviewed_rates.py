@@ -8,7 +8,7 @@ import subprocess
 import sys
 from datetime import date
 
-from check_new_month import expected_latest
+from check_new_month import expected_latest, sourcing_overdue
 from fetch_convyta_rates import next_month
 from select_reviewed_source import select_source
 
@@ -92,6 +92,10 @@ def resolve(month, source):
             command(['gh', 'issue', 'close', str(issue['number']), '--comment', message])
 
 
+class SourceUnavailable(RuntimeError):
+    """Neither approved source yielded a reviewed row; publication is blocked."""
+
+
 def discover(month, temp):
     sources = []
     errors = []
@@ -109,6 +113,8 @@ def discover(month, temp):
         else:
             # A malformed successful extraction is a control exception, not fallback.
             sources.append(json.loads(output.read_text(encoding='utf-8')))
+    if all(source is None for source in sources):
+        raise SourceUnavailable('no reviewed source found; ' + '; '.join(errors))
     try:
         return select_source(month, *sources)
     except Exception as exc:
@@ -175,7 +181,17 @@ def run(today, temp):
         while data[-1]['monthKey'] < target:
             month = next_month(data[-1]['monthKey'])
             stage = 'reviewed extraction/source selection'
-            source = discover(month, temp)
+            try:
+                source = discover(month, temp)
+            except SourceUnavailable as exc:
+                if sourcing_overdue(month, today):
+                    raise
+                summary(
+                    f'SOURCING WAIT - {month}: reviewed evidence unavailable; '
+                    f'canonical remains {data[-1]["monthKey"]}. '
+                    f'Automatic daily retries; escalation on {month}-15. {exc}'
+                )
+                return 0
             stage = 'candidate validation'
             updated = candidate(data, month, source)
             RATES.write_text(json.dumps(updated, indent=2) + '\n', encoding='utf-8')

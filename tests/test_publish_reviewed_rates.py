@@ -52,14 +52,16 @@ class PublicationTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             pipeline.verify(self.before, after, '2026-09', source())
 
-    def exercise(self, latest='2026-08', fail=None, unavailable=None):
+    def exercise(self, latest='2026-08', fail=None, unavailable=None, today=date(2026, 10, 6)):
         data = [dict(monthKey=latest, i1=0.039, i2=0.053)]
         snapshots = [('head', data)]
         months = []
         def discovery(month, temp):
             months.append(month)
+            if fail == 'extraction':
+                raise RuntimeError('malformed or conflicting reviewed evidence')
             if unavailable == month:
-                raise RuntimeError('no reviewed source found')
+                raise pipeline.SourceUnavailable('no reviewed source found')
             result = source(month)
             snapshots.append(('new', pipeline.candidate(snapshots[-1][1], month, result)))
             return result
@@ -73,7 +75,7 @@ class PublicationTests(unittest.TestCase):
             if fail == 'validator':
                 raise RuntimeError('invalid candidate')
         with tempfile.TemporaryDirectory() as directory, patch.object(pipeline, 'reconcile'), patch.object(pipeline, 'RATES', Path(directory)/'rates.json'), patch.object(pipeline, 'canonical', side_effect=canonical), patch.object(pipeline, 'command', side_effect=command), patch.object(pipeline, 'discover', side_effect=discovery), patch.object(pipeline, 'validate', side_effect=validate), patch.object(pipeline, 'resolve') as resolve, patch.object(pipeline, 'exception') as exception, patch.object(pipeline, 'summary'):
-            status = pipeline.run(date(2026, 10, 6), Path(directory))
+            status = pipeline.run(today, Path(directory))
             return status, months, resolve.call_count, exception.call_args
 
     def test_already_current(self):
@@ -87,8 +89,34 @@ class PublicationTests(unittest.TestCase):
 
     def test_recovery_then_sourcing_wait(self):
         result = self.exercise(unavailable='2026-10')
-        self.assertEqual(result[:3], (1, ['2026-09', '2026-10'], 1))
+        self.assertEqual(result[:3], (0, ['2026-09', '2026-10'], 1))
+        self.assertIsNone(result[3])
+
+    def test_wait_before_fifteenth(self):
+        self.assertEqual(self.exercise(latest='2026-09', unavailable='2026-10', today=date(2026, 10, 14))[:3], (0, ['2026-10'], 0))
+
+    def test_escalate_on_fifteenth(self):
+        result = self.exercise(latest='2026-09', unavailable='2026-10', today=date(2026, 10, 15))
+        self.assertEqual(result[:3], (1, ['2026-10'], 0))
         self.assertEqual(result[3].args[0], '2026-10')
+
+    def test_prior_backlog_never_becomes_normal_wait(self):
+        result = self.exercise(latest='2026-08', unavailable='2026-09')
+        self.assertEqual(result[:3], (1, ['2026-09'], 0))
+
+    def test_current_month_not_due_before_fifth(self):
+        self.assertEqual(self.exercise(latest='2026-09', today=date(2026, 10, 4))[:3], (0, [], 0))
+
+    def test_control_failure_is_immediate_during_wait_window(self):
+        result = self.exercise(latest='2026-09', fail='extraction', today=date(2026, 10, 6))
+        self.assertEqual(result[:3], (1, ['2026-10'], 0))
+        self.assertEqual(result[3].args[1], 'reviewed extraction/source selection')
+
+    def test_both_sources_absent_produces_explicit_wait_signal(self):
+        result = type('Result', (), dict(returncode=1, stderr='UNAVAILABLE: no current row found'))()
+        with tempfile.TemporaryDirectory() as directory, patch.object(pipeline.subprocess, 'run', return_value=result):
+            with self.assertRaises(pipeline.SourceUnavailable):
+                pipeline.discover('2026-10', Path(directory))
 
     def test_failed_publication(self):
         result = self.exercise(fail='publication')

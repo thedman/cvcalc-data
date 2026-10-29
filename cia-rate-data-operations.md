@@ -66,19 +66,13 @@ Principles: **no fabrication into the dataset**, **no unreviewed production writ
 
 ## Update process
 
-1. **Discovery** — `rate-discovery.yml` runs on a schedule (days 1–10 monthly, the
-   publication window) and on demand. `check_new_month.py` compares the dataset's latest
-   month to the expected-available month. If a newer month is due but missing, it opens a
-   single issue (deduped by title) asking a human to source the authoritative value. A
-   BoC-derived estimate is attached **only as a sanity-check reference**, clearly labelled
-   non-authoritative.
-2. **Sourcing (human)** — obtain official i1/i2 from CIA / FTSE Russell; record the source
-   URL and retrieval date.
-3. **PR** — add the record to `cia_rates.json` on a branch, preserving ascending order;
-   open a PR.
-4. **Validation** — `validate-rates.yml` runs `validate_rates.py` automatically on the PR.
-5. **Review & merge** — a human reviews and merges. Apps pick up the new latest month on
-   their next fetch.
+1. **Discovery** — `rate-discovery.yml` runs daily at 13:00 UTC on days 5-31 and on demand. Before the 5th the calendar target is the previous month; from the 5th it is the current month. Never anticipate next month's rates.
+2. **Reviewed evidence** — deterministically extract Convyta (preferred) and Penad (fallback/corroboration). If both are available they must agree. Never publish estimates.
+3. **Wait or exception** — unavailable current-month evidence is a normal sourcing wait through the 14th. On the 15th, raise a deduplicated human exception. Prior-month backlog and control failures escalate immediately.
+4. **Publication** — append exactly the next canonical month, validate the candidate, then commit and push main in the same workflow using the repository token. No routine PR or human approval is required.
+5. **Verification** — fetch main again, rerun validation, compare exact values and unchanged history, record provenance, and close the monthly issue only after verification. Repeat sequentially for backlog; never skip a month.
+
+See [Monthly CIA Rate Operations](docs/monthly-rate-operations.md) for the current methodology and October 29, 2026 timing change.
 
 ---
 

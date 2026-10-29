@@ -18,7 +18,7 @@ Purpose: Maintain safe public CIA rate data used by CVCalculator rate pickers.
 
 Highest Context Switch Risk: Do not treat this as an app repo or invent/hand-edit rates without verified source context.
 
-Read First: `README.md`, `cia_rates.json`, and `.github/workflows/monthly-rate-reminder.yml`.
+Read First: `README.md`, `cia_rates.json`, and `.github/workflows/rate-discovery.yml`.
 
 ## What this repository IS
 
@@ -41,7 +41,7 @@ The repository gives CVCalculator apps a shared public source of CIA rate data. 
 
 Current maturity: active shared data support repository.
 
-Source of truth: `cia_rates.json` for public app-consumed data; `.github/workflows/monthly-rate-reminder.yml` for update automation.
+Source of truth: `cia_rates.json` for public app-consumed data; `.github/workflows/rate-discovery.yml` for update automation.
 
 ## Production
 
@@ -58,8 +58,9 @@ Source of truth: `cia_rates.json` for public app-consumed data; `.github/workflo
 
 ## Deployment
 
-- Workflow: `.github/workflows/monthly-rate-reminder.yml`.
-- Trigger: monthly schedule and manual workflow dispatch.
+- Workflow: `.github/workflows/rate-discovery.yml`.
+- Trigger: daily at 13:00 UTC on the 5th through month end, plus manual dispatch.
+- Methodology: current-month sourcing starts on the 5th; unavailable evidence waits through the 14th and escalates on the 15th. Control failures escalate immediately. See [monthly operations](docs/monthly-rate-operations.md).
 - Output: updates `cia_rates.json` when a new month is added.
 - Rollback: revert data commit if a published rate update is wrong; no separate rollback runbook documented.
 - Verification: review source data, generated month key, rate values, and resulting JSON before relying on updates.
@@ -105,7 +106,7 @@ Implication: Workflow and data changes must be reviewed as production-support ch
 
 ## AI Agent Guidance
 
-First files to read: `README.md`, `cia_rates.json`, and `.github/workflows/monthly-rate-reminder.yml`.
+First files to read: `README.md`, `cia_rates.json`, and `.github/workflows/rate-discovery.yml`.
 
 Safe operations: review data, update documentation, inspect workflow logic, and propose validation checks.
 
@@ -118,7 +119,7 @@ This repository stores public CIA rate data used by the CVCalculator app's CIA r
 ## Contents
 
 - `cia_rates.json` is the public output consumed by the app.
-- `.github/workflows/monthly-rate-reminder.yml` updates the rate file from public source data on a monthly schedule.
+- `.github/workflows/rate-discovery.yml` updates the rate file from public source data on a monthly schedule.
 
 ## Data Posture
 
