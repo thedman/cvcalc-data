@@ -172,6 +172,20 @@
   {
     "monthKey": "2026-11",
     "i1": 0.043,
-    "i2": 0.053
+    "i2": 0.053,
+    "roundedEscalation": {
+      "basis": "rounded-cpi-v1",
+      "monthKey": "2026-11",
+      "i1": 0.043,
+      "i2": 0.053,
+      "first": 0.022,
+      "later": 0.022,
+      "sourceURL": "https://convyta.com/files/16oiekxl/production/5b540b08c0edec97d054983422949e93906bd437.pdf/Convyta%20Partners%20-%20CV%20Rates%20and%20Annuity%20Guidance.pdf",
+      "publicationDate": "2026-11-02",
+      "sourceSHA256": "362c85cc91e20c05afc4dac7152d5c8d77aa12e43eb573497e2e4bcffc0411a3",
+      "fingerprintKind": "pdf-file",
+      "reviewedAtUTC": "2026-11-05T20:34:00+00:00",
+      "reviewedTextSHA256": "b2827e3723cc6cac180fbf84ebaf4f54be911bb471ad70b9c4eb4c2eae8cd45d"
+    }
   }
 ]
