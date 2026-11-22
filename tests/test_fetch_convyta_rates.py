@@ -79,6 +79,19 @@ class FetchConvytaRatesTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("already exists", result.stderr)
 
+    def test_read_only_existing_month_accepts_latest_without_changing_file(self) -> None:
+        rates = FIXTURES / "rates_through_july.json"
+        before = rates.read_bytes()
+        args = ("--month", "2026-07", "--html-file", str(FIXTURES / "convyta_success.html"),
+                "--rates-file", str(rates), "--existing-month")
+        result = run_script(*args)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout)["month_key"], "2026-07")
+        forbidden = run_script(*args, "--append-rate")
+        self.assertNotEqual(forbidden.returncode, 0)
+        self.assertIn("read-only", forbidden.stderr)
+        self.assertEqual(rates.read_bytes(), before)
+
     def test_duplicate_conflicting_source_rows_fail(self) -> None:
         result = run_script(
             "--month", "2026-07",

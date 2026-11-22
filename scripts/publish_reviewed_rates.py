@@ -10,6 +10,7 @@ from datetime import date
 
 from check_new_month import expected_latest, sourcing_overdue
 from fetch_convyta_rates import next_month
+from rounded_escalation import validate_escalation
 from select_reviewed_source import select_source
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -36,6 +37,11 @@ def candidate(data, month, source):
         if isinstance(value, bool) or not isinstance(value, (int, float)):
             raise ValueError(f'{field} must be numeric')
         row[field] = value
+    if source.get('rounded_escalation') is not None:
+        if source.get('source_name') != 'Convyta':
+            raise ValueError('rounded escalation evidence requires the reviewed Convyta source')
+        row['roundedEscalation'] = source['rounded_escalation']
+        validate_escalation(row)
     return data + [row]
 
 
@@ -43,6 +49,71 @@ def verify(before, after, month, source):
     expected = candidate(before, month, source)
     if after != expected:
         raise ValueError('canonical main differs from exact validated one-month candidate')
+
+
+def escalation_candidate(data, month, source):
+    current = data[-1]
+    if current['monthKey'] != month or source['month_key'] != month:
+        raise ValueError('rounded evidence must apply to the latest canonical month')
+    if source.get('source_name') != 'Convyta' or any(current[key] != source[key] for key in ('i1', 'i2')):
+        raise ValueError('rounded evidence must match the published nominal pair')
+    evidence = source.get('rounded_escalation')
+    if evidence is None:
+        return data
+    enriched = {**current, 'roundedEscalation': evidence}
+    validate_escalation(enriched)
+    old = current.get('roundedEscalation')
+    if old is not None:
+        if all(old[key] == evidence[key] for key in ('first', 'later')):
+            return data
+        if evidence['publicationDate'] <= old['publicationDate']:
+            raise ValueError('a rounded-tier correction requires a later dated source')
+    return data[:-1] + [enriched]
+
+
+def push_candidate(message, source):
+    command(['git', 'config', 'user.name', 'github-actions[bot]'])
+    command(['git', 'config', 'user.email', 'github-actions[bot]@users.noreply.github.com'])
+    command(['git', 'add', '--', 'cia_rates.json'])
+    command(['git', 'commit', '-m', message, '-m', json.dumps(source, sort_keys=True)])
+    # Ordinary fast-forward push; concurrent updates fail closed.
+    command(['git', 'push', 'origin', 'HEAD:refs/heads/main'])
+
+
+def discover_existing_escalation(month, temp):
+    output = temp / f'rounded-retry-{month}.json'
+    output.unlink(missing_ok=True)
+    result = subprocess.run(
+        [sys.executable, 'scripts/fetch_convyta_rates.py', '--month', month,
+         '--rates-file', str(RATES), '--existing-month', '--json-out', str(output)],
+        cwd=ROOT, text=True, capture_output=True)
+    if result.returncode:
+        summary(f'{month}: rounded escalation retry found no usable evidence. {result.stderr.strip()}')
+        return None
+    return json.loads(output.read_text(encoding='utf-8'))
+
+
+def retry_current_escalation(data, month, temp):
+    """Same-month enrichment has no publication-issue or subscriber notification side effects."""
+    try:
+        source = discover_existing_escalation(month, temp)
+        if source is None:
+            return 0
+        updated = escalation_candidate(data, month, source)
+        if updated == data:
+            summary(f'{month}: no rounded escalation change to publish.')
+            return 0
+        RATES.write_text(json.dumps(updated, indent=2) + '\n', encoding='utf-8')
+        validate(RATES)
+        push_candidate(f'Update {month} rounded escalation only', source)
+        _, after = canonical(temp)
+        if after != updated:
+            raise ValueError('canonical main differs from the exact escalation-only candidate')
+        summary(f'{month}: verified rounded escalation update with identical nominal rates and month keys.')
+        return 0
+    except Exception as exc:
+        summary(f'{month}: rounded escalation update stopped. {exc}')
+        return 1
 
 
 def summary(message):
@@ -161,6 +232,9 @@ def reconcile(data):
             raise ReconciliationError(month, f'Unresolved canonical issue for {month} has no automated publication provenance; human reconciliation required')
         if any(rows[month][field] != evidence[field] for field in ('i1', 'i2')):
             raise ReconciliationError(month, f'Canonical {month} differs from publication provenance')
+        if (evidence.get('rounded_escalation') is not None
+                and rows[month].get('roundedEscalation') != evidence['rounded_escalation']):
+            raise ReconciliationError(month, f'Canonical {month} rounded tiers differ from publication provenance')
         resolve(month, evidence)
 
 
@@ -176,6 +250,8 @@ def run(today, temp):
         reconcile(data)
         target = expected_latest(today)
         if data[-1]['monthKey'] >= target:
+            if data[-1]['monthKey'] == target == today.strftime('%Y-%m'):
+                return retry_current_escalation(data, target, temp)
             summary(f'Canonical already current: {data[-1]["monthKey"]}; calendar target {target}.')
             return 0
         while data[-1]['monthKey'] < target:
@@ -194,15 +270,12 @@ def run(today, temp):
                 return 0
             stage = 'candidate validation'
             updated = candidate(data, month, source)
+            if 'roundedEscalation' not in updated[-1]:
+                summary(f'{month}: reviewed nominal rates only. No matching published rounded pair; V2 month unavailable.')
             RATES.write_text(json.dumps(updated, indent=2) + '\n', encoding='utf-8')
             validate(RATES)
             stage = 'publication'
-            command(['git', 'config', 'user.name', 'github-actions[bot]'])
-            command(['git', 'config', 'user.email', 'github-actions[bot]@users.noreply.github.com'])
-            command(['git', 'add', '--', 'cia_rates.json'])
-            command(['git', 'commit', '-m', f'Publish {month} validated reviewed CIA rates', '-m', json.dumps(source, sort_keys=True)])
-            # Ordinary fast-forward push; concurrent updates fail closed, never force.
-            command(['git', 'push', 'origin', 'HEAD:refs/heads/main'])
+            push_candidate(f'Publish {month} validated reviewed CIA rates', source)
             stage = 'post-push canonical verification'
             revision, after = canonical(temp)
             verify(data, after, month, source)

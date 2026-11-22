@@ -20,11 +20,14 @@ import sys
 import urllib.parse
 import urllib.request
 from io import BytesIO
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
+from decimal import Decimal
 from html.parser import HTMLParser
 from pathlib import Path
 from typing import Iterable
+
+from rounded_escalation import BASIS, validate_escalation
 
 CONVYTA_RESOURCES_URL = "https://convyta.com/resources"
 APPROVED_DOMAINS = {"convyta.com", "www.convyta.com"}
@@ -69,6 +72,7 @@ class ExtractedRate:
     retrieved_at_utc: str
     content_sha256: str
     pdf_status: str = "not_checked"
+    rounded_escalation: dict[str, object] | None = None
 
     def as_rate_row(self) -> dict[str, object]:
         return {"monthKey": self.month_key, "i1": self.i1, "i2": self.i2}
@@ -316,6 +320,69 @@ def discover_pdf_links(html_text: str, base_url: str) -> list[str]:
     return sorted(set(links))
 
 
+def extract_rounded_escalation(text: str, url: str, rate: ExtractedRate) -> dict[str, object] | None:
+    """Read the four CV tiers from one uniquely identified row in the known guidance layout."""
+    header = r"\bPeriod (?:First 10 Yrs\. Thereafter ){2}First 10 Yrs\. Thereafter\b"
+    pages = []
+    for page in text.split("\f"):
+        rows = [normalize_space(line).split() for line in page.splitlines()]
+        matches = {tuple(row) for row in rows if row and normalize_month(row[0]) == rate.month_key}
+        if matches:
+            pages.append((normalize_space(page), matches))
+    if len(pages) != 1:
+        return None
+    page, matches = pages[0]
+    if (not re.search(header, page, re.I)
+            or not re.search(r"\bPension Escalation Rates\s*-\s*Rounded\b", page, re.I)
+            or not re.search(r"\bPension Escalation Rates\s*-\s*Unrounded\b", page, re.I)
+            or "commuted value interest rates" not in page.lower()
+            or "group annuity proxy interest rates" not in page.lower()):
+        return None
+    dates = set(re.findall(
+        r"\b(?:January|February|March|April|May|June|July|August|September|October|November|December) "
+        r"\d{1,2}, \d{4}\b",
+        page, re.I,
+    ))
+    if len(matches) != 1 or len(dates) != 1:
+        return None
+    row, = matches
+    # Six CV percentages. Older months can also have four annuity/CPI cells and a mortality label.
+    if (len(row) not in {7, 12}
+            or not all(PERCENT_RE.fullmatch(cell) for cell in row[1:7])
+            or not all(re.fullmatch(r"\d+(?:\.\d)?%", cell) for cell in row[3:5])
+            or (len(row) == 12 and not all(PERCENT_RE.fullmatch(cell) for cell in row[7:11]))):
+        return None
+    i1, i2 = (float(Decimal(cell[:-1]) / 100) for cell in row[1:3])
+    if (i1, i2) != (rate.i1, rate.i2):
+        return None
+    evidence = {
+        "basis": BASIS, "monthKey": rate.month_key, "i1": i1, "i2": i2,
+        "first": percent_to_decimal(row[3]), "later": percent_to_decimal(row[4]),
+        "sourceURL": quote_url_for_request(url),
+        "publicationDate": datetime.strptime(next(iter(dates)), "%B %d, %Y").date().isoformat(),
+        "sourceSHA256": hashlib.sha256(text.encode("utf-8")).hexdigest(),
+        "fingerprintKind": "extracted-pdf-text",
+        "reviewedAtUTC": datetime.now(timezone.utc).replace(microsecond=0).isoformat(),
+    }
+    validate_escalation({**rate.as_rate_row(), "roundedEscalation": evidence})
+    return evidence
+
+
+def enrich_html_rate(rate: ExtractedRate, pdf_links: list[str]) -> ExtractedRate:
+    evidence = []
+    for link in pdf_links:
+        try:
+            pair = extract_rounded_escalation(extract_pdf_text(link), link, rate)
+            if pair is not None:
+                evidence.append(pair)
+        except Exception:
+            # An unavailable supplementary PDF must not change successful nominal publication.
+            continue
+    if len({(pair["first"], pair["later"]) for pair in evidence}) == 1:
+        return replace(rate, rounded_escalation=evidence[0])
+    return rate
+
+
 def extract_pdf_text(url: str) -> str:
     try:
         from pypdf import PdfReader  # type: ignore
@@ -328,7 +395,7 @@ def extract_pdf_text(url: str) -> str:
     with urllib.request.urlopen(request, timeout=30) as response:
         data = response.read()
     reader = PdfReader(BytesIO(data))
-    return "\n".join(page.extract_text() or "" for page in reader.pages)
+    return "\n\f\n".join(page.extract_text() or "" for page in reader.pages)
 
 
 def discover_html_links(html_text: str, base_url: str) -> list[str]:
@@ -350,38 +417,49 @@ def discover_html_links(html_text: str, base_url: str) -> list[str]:
 
 def extract_from_resources(html_text: str, source_url: str, target_month: str) -> ExtractedRate:
     errors: list[str] = []
+    pdf_links = discover_pdf_links(html_text, source_url)[:5]
     try:
-        return extract_from_tables(html_text, source_url, target_month)
+        rate = extract_from_tables(html_text, source_url, target_month)
+        return enrich_html_rate(rate, pdf_links)
     except SourceError as exc:
         errors.append(f"{source_url}: {exc}")
 
     for link in discover_html_links(html_text, source_url)[:10]:
         try:
             linked_html = fetch_url(link)
-            return extract_from_tables(linked_html, link, target_month)
+            rate = extract_from_tables(linked_html, link, target_month)
+            linked_pdfs = discover_pdf_links(linked_html, link)
+            return enrich_html_rate(rate, list(dict.fromkeys(pdf_links + linked_pdfs))[:5])
         except Exception as exc:
             errors.append(f"{link}: {exc}")
 
-    for link in discover_pdf_links(html_text, source_url)[:5]:
+    for link in pdf_links:
         try:
             pdf_text = extract_pdf_text(link)
-            return extract_from_plain_text(pdf_text, link, target_month, "pdf")
+            rate = extract_from_plain_text(pdf_text, link, target_month, "pdf")
         except Exception as exc:
             errors.append(f"{link}: {exc}")
+            continue
+        try:
+            return replace(rate, rounded_escalation=extract_rounded_escalation(pdf_text, link, rate))
+        except ValueError:
+            return rate
 
     raise SourceError("; ".join(errors))
 
 
-def validate_against_rates(rate: ExtractedRate, rates_path: Path) -> None:
+def validate_against_rates(rate: ExtractedRate, rates_path: Path, existing_month: bool = False) -> None:
     with rates_path.open() as f:
         data = json.load(f)
     existing = {row["monthKey"] for row in data}
-    if rate.month_key in existing:
+    if not existing_month and rate.month_key in existing:
         raise SourceError(f"{rate.month_key} already exists in {rates_path}")
     latest = max(existing)
-    expected_next = next_month(latest)
-    if rate.month_key != expected_next:
-        raise SourceError(f"{rate.month_key} is not expected next month after {latest} ({expected_next})")
+    if existing_month:
+        if rate.month_key != latest:
+            raise SourceError(f"{rate.month_key} is not the latest canonical month ({latest})")
+    elif rate.month_key != next_month(latest):
+        raise SourceError(f"{rate.month_key} is not expected next month after {latest} ({next_month(latest)})")
     for field in ("i1", "i2"):
         value = getattr(rate, field)
         if not isinstance(value, float) or not (0.0 <= value <= 0.12):
@@ -442,6 +520,7 @@ def parse_args(argv: Iterable[str]) -> argparse.Namespace:
     parser.add_argument("--html-file", help="test fixture or saved HTML file")
     parser.add_argument("--json-out", help="write normalized evidence JSON")
     parser.add_argument("--append-rate", action="store_true", help="append the sourced row to rates file")
+    parser.add_argument("--existing-month", action="store_true", help="read evidence for the latest canonical month")
     parser.add_argument("--check-pdf-links", action="store_true", help="record direct PDF links when present")
     return parser.parse_args(list(argv))
 
@@ -451,12 +530,14 @@ def main(argv: Iterable[str] = sys.argv[1:]) -> int:
     try:
         if not MONTH_KEY_RE.match(args.month):
             raise SourceError("--month must be YYYY-MM")
+        if args.existing_month and args.append_rate:
+            raise SourceError("--existing-month is read-only")
         html_text, source_url = load_source(args)
         if args.html_file:
             rate = extract_from_tables(html_text, source_url, args.month)
         else:
             rate = extract_from_resources(html_text, source_url, args.month)
-        validate_against_rates(rate, Path(args.rates_file))
+        validate_against_rates(rate, Path(args.rates_file), args.existing_month)
         if args.check_pdf_links:
             pdf_links = discover_pdf_links(html_text, source_url)
             rate = ExtractedRate(**{**rate.__dict__, "pdf_status": "available" if pdf_links else "not_found"})

@@ -74,7 +74,7 @@ class PublicationTests(unittest.TestCase):
         def validate(path):
             if fail == 'validator':
                 raise RuntimeError('invalid candidate')
-        with tempfile.TemporaryDirectory() as directory, patch.object(pipeline, 'reconcile'), patch.object(pipeline, 'RATES', Path(directory)/'rates.json'), patch.object(pipeline, 'canonical', side_effect=canonical), patch.object(pipeline, 'command', side_effect=command), patch.object(pipeline, 'discover', side_effect=discovery), patch.object(pipeline, 'validate', side_effect=validate), patch.object(pipeline, 'resolve') as resolve, patch.object(pipeline, 'exception') as exception, patch.object(pipeline, 'summary'):
+        with tempfile.TemporaryDirectory() as directory, patch.object(pipeline, 'reconcile'), patch.object(pipeline, 'RATES', Path(directory)/'rates.json'), patch.object(pipeline, 'canonical', side_effect=canonical), patch.object(pipeline, 'command', side_effect=command), patch.object(pipeline, 'discover', side_effect=discovery), patch.object(pipeline, 'validate', side_effect=validate), patch.object(pipeline, 'resolve') as resolve, patch.object(pipeline, 'exception') as exception, patch.object(pipeline, 'summary'), patch.object(pipeline, 'discover_existing_escalation', return_value=None):
             status = pipeline.run(today, Path(directory))
             return status, months, resolve.call_count, exception.call_args
 
