@@ -17,6 +17,8 @@ import json
 import re
 import sys
 
+from rounded_escalation import validate_escalation
+
 MONTH_RE = re.compile(r"^\d{4}-(0[1-9]|1[0-2])$")
 
 # CIA commuted-value i1/i2 have historically sat ~3%-6%. Hard bounds fail the
@@ -84,6 +86,11 @@ def main() -> int:
                 warnings.append(
                     f"{ctx}: {field}={value} outside typical band [{SOFT_MIN}, {SOFT_MAX}] — review"
                 )
+
+        try:
+            validate_escalation(row)
+        except (KeyError, TypeError, ValueError) as exc:
+            errors.append(f"{ctx}: {exc}")
 
     # Gap detection across consecutive valid months.
     for a, b in zip(valid_keys, valid_keys[1:]):

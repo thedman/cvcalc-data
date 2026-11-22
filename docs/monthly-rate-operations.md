@@ -91,6 +91,14 @@ When Convyta extraction and source selection pass, automation appends exactly th
 
 When extraction fails, automation should leave the sourcing issue open. It should comment only when the status materially changes so the issue remains useful rather than noisy.
 
+### Rounded CPI extension
+
+On the same candidate row, write optional `roundedEscalation` when the reviewed Convyta PDF gives an unambiguous, dated row with both explicitly rounded CPI tiers and the same month and nominal rates as the selected source. Reuse the already downloaded PDF when it supplied the nominal row. When HTML supplied the nominal pair, try the guidance PDF links from the same Convyta discovery and require exact nominal agreement. Penad's nominal-only table can still supply a V1 publication. An absent, unrecognizable or conflicting supplementary pair leaves V2 unavailable and is reported in the existing workflow summary.
+
+The nested evidence carries the basis, month, matching nominal pair, rounded pair, source URL, publication date and fingerprint. Nominal fields retain their original names and meaning. The candidate validator, exact post-push comparison, and provenance record cover the optional evidence.
+
+Once the current calendar month's nominal row exists and the normal monthly check is due, a scheduled run can retry the Convyta rounded evidence for that same month. It requires the published nominal pair to match exactly. The candidate replaces only the current row's `roundedEscalation` object and verifies the entire resulting file after the push. Repeating the same tiers is a no-op and preserves the original provenance. Different tiers require a later dated source. The retry performs no issue creation, issue closure, or delivery calls. Historical rows and nominal rate corrections are outside this retry. Verify any external subscriber trigger before deploying the publisher extension.
+
 ## Reviewed-Source Selection
 
 Source priority:
